@@ -13,9 +13,7 @@ targets:
   RadarMap:
     type: application
     platform: iOS
-    sources:
-      - Sources
-      - Resources
+    sources: [Sources, Resources]
     dependencies:
       - package: MapLibre
         product: MapLibre
@@ -38,7 +36,3 @@ targets:
               - UISceneClassName: CPTemplateApplicationScene
                 UISceneConfigurationName: CarPlay
                 UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
-    entitlements:
-      path: RadarMap.entitlements
-      properties:
-        com.apple.developer.carplay-driving-task: true
