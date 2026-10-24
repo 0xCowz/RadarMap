@@ -13,15 +13,16 @@ targets:
   RadarMap:
     type: application
     platform: iOS
-    sources: [Sources, Resources]
-    assets: Resources/Assets.xcassets
+    sources:
+      - Sources
+      - Resources
     dependencies:
       - package: MapLibre
         product: MapLibre
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.radarmap   # à remplacer par le vôtre
-        DEVELOPMENT_TEAM: ""                              # votre Team ID Apple
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.radarmap
+        DEVELOPMENT_TEAM: ""
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1"
     info:
@@ -40,5 +41,4 @@ targets:
     entitlements:
       path: RadarMap.entitlements
       properties:
-        # Nécessite l'accord d'Apple (voir README). Supprimer cette ligne pour un test sans CarPlay.
         com.apple.developer.carplay-driving-task: true
