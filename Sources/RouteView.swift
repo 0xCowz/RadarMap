@@ -267,7 +267,7 @@ struct RouteConfirmationSheet: View {
                         )
                     }
                     .padding(16)
-                    .background(.secondarySystemBackground, in: RoundedRectangle(cornerRadius: 18))
+                    .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
 
                     if radars.isEmpty {
                         HStack(spacing: 12) {
@@ -316,7 +316,7 @@ struct RouteConfirmationSheet: View {
                                         .foregroundStyle(item.kind.color)
                                 }
                                 .padding(12)
-                                .background(.secondarySystemBackground, in: RoundedRectangle(cornerRadius: 14))
+                                .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
                             }
                         }
                     }
