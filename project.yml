@@ -17,6 +17,10 @@ targets:
     dependencies:
       - package: MapLibre
         product: MapLibre
+    entitlements:
+      path: RadarMap.entitlements
+      properties:
+        com.apple.developer.carplay-driving-task: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.radarmap

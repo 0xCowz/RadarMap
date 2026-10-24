@@ -43,6 +43,14 @@ jobs:
             build \
             2>&1
 
+      - name: Signer ad-hoc avec entitlements CarPlay
+        run: |
+          APP="build/Build/Products/Release-iphoneos/RadarMap.app"
+          # Ad-hoc sign pour que Sideloadly lise les entitlements CarPlay
+          codesign --force --sign - --entitlements RadarMap.entitlements "$APP" || true
+          # Copier le fichier entitlements dans le bundle (Sideloadly fallback)
+          cp RadarMap.entitlements "$APP/"
+
       - name: Empaqueter le .ipa
         run: |
           mkdir -p Payload
