@@ -28,6 +28,12 @@ targets:
       properties:
         CFBundleDisplayName: Radars
         UILaunchScreen: {}
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: false
+          NSExceptionDomains:
+            api.lucasmrq.work:
+              NSExceptionAllowsInsecureHTTPLoads: false
+              NSIncludesSubdomains: false
         NSLocationWhenInUseUsageDescription: "Pour centrer la carte sur votre position et lister les radars proches."
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true

@@ -5,7 +5,8 @@ import Foundation
 final class RadarStore: ObservableObject {
     static let shared = RadarStore()
 
-    let all: [Radar] = Radar.loadBundled()
+    @Published var all: [Radar] = Radar.loadBundled()   // Démarrage immédiat sur le CSV
+    @Published var isLoadingRemote = false
     private let key = "enabledKinds"
 
     @Published var enabledKinds: Set<RadarKind> {
@@ -15,6 +16,15 @@ final class RadarStore: ObservableObject {
     init() {
         let saved = UserDefaults.standard.stringArray(forKey: key)?.compactMap(RadarKind.init(rawValue:))
         enabledKinds = saved.map(Set.init) ?? Set(RadarKind.allCases)
+        Task { await refreshFromAPI() }
+    }
+
+    @MainActor
+    func refreshFromAPI() async {
+        isLoadingRemote = true
+        let remote = await Radar.loadAll()
+        if !remote.isEmpty { all = remote }
+        isLoadingRemote = false
     }
 
     var filtered: [Radar] { all.filter { enabledKinds.contains($0.kind) } }

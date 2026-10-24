@@ -139,14 +139,58 @@ struct Radar: Identifiable, Hashable {
         [route, direction].filter { !$0.isEmpty }.joined(separator: " — ")
     }
 
-    // Colonnes: id;type;date;vma;lat;lon;equipement;emplacement;route;direction;departement
+    // ── API NAS (mise à jour automatique depuis data.gouv.fr) ────────────────
+    static let apiURL = "https://api.lucasmrq.work/api/radars"
+    static let reportsURL = "https://api.lucasmrq.work/api/reports"
+
+    /// Charge depuis l'API NAS ; retombe sur le CSV embarqué si hors ligne.
+    static func loadAll() async -> [Radar] {
+        if let remote = try? await fetchFromAPI() { return remote }
+        return loadBundled()
+    }
+
+    private static func fetchFromAPI() async throws -> [Radar] {
+        let (data, _) = try await URLSession.shared.data(from: URL(string: apiURL)!)
+        let json = try JSONDecoder().decode(APIResponse.self, from: data)
+        return json.radars.compactMap { Radar(from: $0) }
+    }
+
+    // Structure JSON reçue de l'API
+    private struct APIResponse: Decodable {
+        let radars: [APIRadar]
+    }
+    struct APIRadar: Decodable {
+        let id, type: String
+        let date: String?
+        let vma: Int?
+        let lat, lon: Double
+        let equipement, emplacement, route, direction, departement: String
+    }
+
+    init?(from r: APIRadar) {
+        guard let kind = RadarKind(rawValue: r.type) else { return nil }
+        let isoFmt = ISO8601DateFormatter()
+        self.id          = r.id
+        self.kind        = kind
+        self.commissioned = r.date.flatMap { isoFmt.date(from: $0) }
+        self.vma         = r.vma
+        self.coordinate  = CLLocationCoordinate2D(latitude: r.lat, longitude: r.lon)
+        self.equipement  = RadarEquipement(rawValue: r.equipement.uppercased()) ?? .other
+        self.emplacement = r.emplacement
+        self.route       = r.route
+        self.direction   = r.direction
+        self.departement = r.departement
+    }
+
+    // ── CSV embarqué (fallback hors ligne) ───────────────────────────────────
+    // Colonnes data.gouv.fr (virgule) :
+    // 0=date_maj 1=date_creation 2=dept 3=lat 4=lon 5=id 6=direction
+    // 7=equipement 8=date_install 9=type 10=emplacement 11=route 12=longueur
+    // 13=vma_pl 14=vma_vl
     static func loadBundled() -> [Radar] {
         guard let url = Bundle.main.url(forResource: "radars", withExtension: "csv"),
               let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
-
         let isoFmt = ISO8601DateFormatter()
-        isoFmt.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]
-
         return text.split(whereSeparator: \.isNewline).dropFirst().compactMap { line in
             let c = line.split(separator: ";", omittingEmptySubsequences: false)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -154,20 +198,15 @@ struct Radar: Identifiable, Hashable {
                   let kind = RadarKind(rawValue: c[1]),
                   let lat  = Double(c[4]),
                   let lon  = Double(c[5]) else { return nil }
-
-            let vma = Int(c[3])
-            let date = isoFmt.date(from: c[2])
-            let equip = c.count > 6 ? RadarEquipement(rawValue: c[6]) ?? .other : .other
-            let empl  = c.count > 7 ? c[7] : ""
-            let route = c.count > 8 ? c[8] : ""
-            let direc = c.count > 9 ? c[9] : ""
-            let dept  = c.count > 10 ? c[10] : ""
-
             return Radar(
-                id: c[0], kind: kind, commissioned: date, vma: vma,
+                id: c[0], kind: kind,
+                commissioned: isoFmt.date(from: c[2]), vma: Int(c[3]),
                 coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
-                equipement: equip, emplacement: empl, route: route,
-                direction: direc, departement: dept
+                equipement: c.count > 6 ? RadarEquipement(rawValue: c[6]) ?? .other : .other,
+                emplacement: c.count > 7 ? c[7] : "",
+                route:       c.count > 8 ? c[8] : "",
+                direction:   c.count > 9 ? c[9] : "",
+                departement: c.count > 10 ? c[10] : ""
             )
         }
     }
