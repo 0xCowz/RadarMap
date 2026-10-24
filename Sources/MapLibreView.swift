@@ -319,11 +319,3 @@ extension MKPolyline {
     }
 }
 
-// MARK: - UIColor from SwiftUI Color
-
-extension UIColor {
-    convenience init(_ color: Color) {
-        let resolved = UIColor(color)
-        self.init(cgColor: resolved.cgColor ?? UIColor.red.cgColor)
-    }
-}
