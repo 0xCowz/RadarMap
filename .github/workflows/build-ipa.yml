@@ -11,19 +11,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Sélectionner Xcode 16
+        run: sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+
       - name: Installer XcodeGen
         run: brew install xcodegen
 
-      # L'entitlement CarPlay nécessite un accord Apple + compte payant.
-      # Pour un usage perso via Xcode (compte gratuit), on le retire ici.
-      # Pour activer CarPlay : commenter cette étape + configurer les secrets de signature.
-      - name: Retirer l'entitlement CarPlay (build gratuit)
+      - name: Retirer l'entitlement CarPlay (compte gratuit)
         run: sed -i '' '/carplay-driving-task/d' project.yml
 
       - name: Générer le projet Xcode
         run: xcodegen
 
-      - name: Compiler (Release, sans signature de distribution)
+      - name: Résoudre les packages SPM
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project RadarMap.xcodeproj \
+            -scheme RadarMap
+
+      - name: Compiler (Release, sans signature)
         run: |
           xcodebuild \
             -project RadarMap.xcodeproj \
