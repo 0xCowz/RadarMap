@@ -8,6 +8,7 @@ targets:
     type: application
     platform: iOS
     sources: [Sources, Resources]
+    assets: Resources/Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.radarmap   # à remplacer par le vôtre
