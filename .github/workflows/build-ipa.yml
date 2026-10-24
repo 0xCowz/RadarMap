@@ -1,0 +1,50 @@
+name: Build IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer XcodeGen
+        run: brew install xcodegen
+
+      # L'entitlement CarPlay nécessite un accord Apple + compte payant.
+      # Pour un usage perso via Xcode (compte gratuit), on le retire ici.
+      # Pour activer CarPlay : commenter cette étape + configurer les secrets de signature.
+      - name: Retirer l'entitlement CarPlay (build gratuit)
+        run: sed -i '' '/carplay-driving-task/d' project.yml
+
+      - name: Générer le projet Xcode
+        run: xcodegen
+
+      - name: Compiler (Release, sans signature de distribution)
+        run: |
+          xcodebuild \
+            -project RadarMap.xcodeproj \
+            -scheme RadarMap \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Empaqueter le .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/RadarMap.app Payload/
+          zip -r RadarMap-unsigned.ipa Payload
+
+      - name: Upload .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: RadarMap-ipa
+          path: RadarMap-unsigned.ipa
+          retention-days: 30
