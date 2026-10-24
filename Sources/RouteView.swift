@@ -59,11 +59,14 @@ final class RouteViewModel: ObservableObject {
             dirReq.source         = origin
             dirReq.destination    = destItem
             dirReq.transportType  = .automobile
-            dirReq.requestsAlternateRoutes = false
+            dirReq.requestsAlternateRoutes = true   // Trafic temps réel via Apple Maps
 
             let dirs = MKDirections(request: dirReq)
             let response = try await dirs.calculate()
-            guard let mkRoute = response.routes.first else {
+            // Prend le trajet le plus rapide selon les conditions de trafic
+            guard let mkRoute = response.routes.sorted(by: {
+                $0.expectedTravelTime < $1.expectedTravelTime
+            }).first else {
                 error = "Aucun itinéraire trouvé"
                 return
             }
@@ -242,6 +245,18 @@ struct RouteConfirmationSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
+
+                    // Badge trafic temps réel
+                    HStack(spacing: 6) {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.green)
+                        Text("Trafic en temps réel · Itinéraire le plus rapide")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(.green.opacity(0.10), in: Capsule())
 
                     // Stats itinéraire
                     HStack(spacing: 0) {

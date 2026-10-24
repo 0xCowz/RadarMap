@@ -3,48 +3,49 @@ import MapKit
 import SwiftUI
 import UIKit
 
-// MARK: - MapLibreView (UIViewRepresentable)
+// MARK: - MapLibreView
 
 struct MapLibreView: UIViewRepresentable {
     @Binding var selectedRadar: Radar?
     @Binding var route: MKRoute?
     var radars: [Radar]
+    var isNavigating: Bool = false
+    var colorScheme: ColorScheme = .light
     var onRegionChange: ((CLLocationCoordinate2D, Double) -> Void)?
 
     func makeUIView(context: Context) -> MLNMapView {
-        // OpenFreeMap – style vecteur gratuit, sans clé API
         let styleURL = URL(string: "https://tiles.openfreemap.org/styles/liberty")!
         let mapView = MLNMapView(frame: .zero, styleURL: styleURL)
         mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
-        mapView.userTrackingMode = .none
+        mapView.userTrackingMode = .follow   // Démarre centré sur l'utilisateur
         mapView.isPitchEnabled = true
         mapView.isRotateEnabled = true
-        mapView.logoView.isHidden = false  // attribution requise
+        mapView.logoView.isHidden = false
         mapView.attributionButton.isHidden = false
         mapView.compassView.compassVisibility = .adaptive
-
-        // Vue 3D initiale sur Paris
-        let camera = MLNMapCamera()
-        camera.centerCoordinate = CLLocationCoordinate2D(latitude: 48.8566, longitude: 2.3522)
-        camera.altitude = 6000
-        camera.pitch = 55
-        camera.heading = 0
-        mapView.setCamera(camera, animated: false)
-
         return mapView
     }
 
     func updateUIView(_ mapView: MLNMapView, context: Context) {
-        // Mise à jour des annotations radar
+        // Mode navigation : suit la voiture avec cap
+        if isNavigating && mapView.userTrackingMode != .followWithCourse {
+            mapView.userTrackingMode = .followWithCourse
+            let center = mapView.userLocation?.coordinate ?? mapView.centerCoordinate
+            let cam = MLNMapCamera(
+                lookingAtCenter: center,
+                altitude: 500, pitch: 60, heading: mapView.camera.heading)
+            mapView.setCamera(cam, withDuration: 0.8, animationTimingFunction: nil)
+        }
+
+        // Dark / light mode – applique seulement si le schéma change
+        context.coordinator.applySchemeIfNeeded(colorScheme, on: mapView)
+
         context.coordinator.updateRadarAnnotations(on: mapView, radars: radars, selected: selectedRadar)
-        // Mise à jour de l'itinéraire
         context.coordinator.updateRoute(on: mapView, route: route)
     }
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     // MARK: - Coordinator
 
@@ -54,74 +55,90 @@ struct MapLibreView: UIViewRepresentable {
         private var pendingRadars: [Radar]?
         private var pendingSelected: Radar?
         private var pendingRoute: MKRoute?
+        var currentScheme: ColorScheme = .light
 
-        init(_ parent: MapLibreView) {
-            self.parent = parent
-        }
+        init(_ parent: MapLibreView) { self.parent = parent }
 
-        // ── Style chargé ────────────────────────────────────────────────────
+        // ── Style chargé ─────────────────────────────────────────────────────
         func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
             styleLoaded = true
             apply3DBuildings(to: style)
-            applyCustomAppearance(to: style)
-            if let radars = pendingRadars {
-                updateRadarAnnotations(on: mapView, radars: radars, selected: pendingSelected)
+            applyAppearance(to: style, dark: currentScheme == .dark)
+            if let r = pendingRadars {
+                updateRadarAnnotations(on: mapView, radars: r, selected: pendingSelected)
                 pendingRadars = nil
             }
-            if let route = pendingRoute {
-                updateRoute(on: mapView, route: route)
+            if let r = pendingRoute {
+                updateRoute(on: mapView, route: r)
                 pendingRoute = nil
             }
         }
 
-        // ── Bâtiments 3D ────────────────────────────────────────────────────
+        // ── Dark / Light switch ───────────────────────────────────────────────
+        func applySchemeIfNeeded(_ scheme: ColorScheme, on mapView: MLNMapView) {
+            guard scheme != currentScheme else { return }
+            currentScheme = scheme
+            guard let style = mapView.style, styleLoaded else { return }
+            applyAppearance(to: style, dark: scheme == .dark)
+        }
+
+        // ── Bâtiments 3D ─────────────────────────────────────────────────────
         private func apply3DBuildings(to style: MLNStyle) {
             guard let source = style.source(withIdentifier: "openmaptiles") else { return }
-
-            // Supprimer l'ancien calque 2D de bâtiments si présent
             if let old = style.layer(withIdentifier: "building") { style.removeLayer(old) }
-
-            let extrusion = MLNFillExtrusionStyleLayer(
-                identifier: "3d-buildings", source: source)
-            extrusion.sourceLayerIdentifier = "building"
-            extrusion.predicate = NSPredicate(format: "render_height > 0 OR render_height == 0")
-            extrusion.fillExtrusionBase   = NSExpression(forKeyPath: "render_min_height")
-            extrusion.fillExtrusionHeight = NSExpression(forKeyPath: "render_height")
-            extrusion.fillExtrusionColor  = NSExpression(forConstantValue:
+            let ext = MLNFillExtrusionStyleLayer(identifier: "3d-buildings", source: source)
+            ext.sourceLayerIdentifier = "building"
+            ext.predicate = NSPredicate(format: "render_height >= 0")
+            ext.fillExtrusionBase   = NSExpression(forKeyPath: "render_min_height")
+            ext.fillExtrusionHeight = NSExpression(forKeyPath: "render_height")
+            ext.fillExtrusionColor  = NSExpression(forConstantValue:
                 UIColor(red: 0.85, green: 0.88, blue: 0.92, alpha: 1))
-            extrusion.fillExtrusionOpacity = NSExpression(forConstantValue: 0.75)
-            style.addLayer(extrusion)
+            ext.fillExtrusionOpacity = NSExpression(forConstantValue: 0.75)
+            style.addLayer(ext)
         }
 
-        // ── Apparence de la carte ────────────────────────────────────────────
-        private func applyCustomAppearance(to style: MLNStyle) {
-            // Route principale en bleu profond
-            for layerID in ["road-primary", "road-secondary", "highway"] {
-                if let layer = style.layer(withIdentifier: layerID) as? MLNLineStyleLayer {
-                    layer.lineColor = NSExpression(forConstantValue:
-                        UIColor(red: 0.15, green: 0.45, blue: 0.85, alpha: 1))
+        // ── Apparence carte (light / dark) ────────────────────────────────────
+        private func applyAppearance(to style: MLNStyle, dark: Bool) {
+            // Fond
+            if let bg = style.layer(withIdentifier: "background") as? MLNBackgroundStyleLayer {
+                bg.backgroundColor = NSExpression(forConstantValue:
+                    dark ? UIColor(red: 0.10, green: 0.11, blue: 0.13, alpha: 1)
+                         : UIColor(red: 0.94, green: 0.94, blue: 0.91, alpha: 1))
+            }
+            // Zones de terrain
+            for id in ["landuse", "landuse-residential", "landcover-grass",
+                        "landcover-wood", "landcover-scrub", "landuse-commercial",
+                        "landuse-industrial"] {
+                if let l = style.layer(withIdentifier: id) as? MLNFillStyleLayer {
+                    l.fillColor = NSExpression(forConstantValue:
+                        dark ? UIColor(red: 0.13, green: 0.15, blue: 0.17, alpha: 1)
+                             : UIColor(red: 0.88, green: 0.92, blue: 0.83, alpha: 1))
                 }
             }
-            // Autoroutes en rouge discret
-            if let hw = style.layer(withIdentifier: "highway_name_major") as? MLNSymbolStyleLayer {
-                hw.textColor = NSExpression(forConstantValue: UIColor.darkGray)
+            // Eau
+            if let w = style.layer(withIdentifier: "water") as? MLNFillStyleLayer {
+                w.fillColor = NSExpression(forConstantValue:
+                    dark ? UIColor(red: 0.08, green: 0.14, blue: 0.25, alpha: 1)
+                         : UIColor(red: 0.55, green: 0.75, blue: 0.90, alpha: 1))
+            }
+            // Routes
+            let roadColor = dark ? UIColor(red: 0.30, green: 0.50, blue: 0.80, alpha: 1)
+                                 : UIColor(red: 0.15, green: 0.45, blue: 0.85, alpha: 1)
+            for id in ["road-primary", "road-secondary", "highway"] {
+                if let l = style.layer(withIdentifier: id) as? MLNLineStyleLayer {
+                    l.lineColor = NSExpression(forConstantValue: roadColor)
+                }
             }
         }
 
-        // ── Annotations radar ────────────────────────────────────────────────
+        // ── Annotations radar ─────────────────────────────────────────────────
         func updateRadarAnnotations(on mapView: MLNMapView, radars: [Radar], selected: Radar?) {
             guard styleLoaded else {
-                pendingRadars  = radars
-                pendingSelected = selected
-                return
+                pendingRadars = radars; pendingSelected = selected; return
             }
-
-            // Supprimer les anciennes
             if let existing = mapView.annotations?.compactMap({ $0 as? RadarMapAnnotation }) {
                 mapView.removeAnnotations(existing)
             }
-
-            // Ajouter les nouvelles
             let annotations = radars.map { radar -> RadarMapAnnotation in
                 let ann = RadarMapAnnotation()
                 ann.radar      = radar
@@ -130,36 +147,25 @@ struct MapLibreView: UIViewRepresentable {
                 ann.subtitle   = radar.vmaText
                 return ann
             }
-            if !annotations.isEmpty {
-                mapView.addAnnotations(annotations)
-            }
+            if !annotations.isEmpty { mapView.addAnnotations(annotations) }
         }
 
-        // ── Itinéraire ───────────────────────────────────────────────────────
+        // ── Itinéraire ────────────────────────────────────────────────────────
         func updateRoute(on mapView: MLNMapView, route: MKRoute?) {
-            guard styleLoaded else {
-                pendingRoute = route
-                return
-            }
-
-            // Nettoyer
+            guard styleLoaded else { pendingRoute = route; return }
             if let s = mapView.style {
                 ["route-casing", "route-line"].forEach { id in
                     if let l = s.layer(withIdentifier: id) { s.removeLayer(l) }
                 }
                 if let src = s.source(withIdentifier: "route-source") { s.removeSource(src) }
             }
-
             guard let route, let style = mapView.style else { return }
 
             var coords = route.polyline.coordinates
-            let polyline = MLNPolylineFeature(coordinates: &coords,
-                                              count: UInt(coords.count))
-            let source = MLNShapeSource(identifier: "route-source",
-                                        features: [polyline], options: nil)
+            let polyline = MLNPolylineFeature(coordinates: &coords, count: UInt(coords.count))
+            let source = MLNShapeSource(identifier: "route-source", features: [polyline], options: nil)
             style.addSource(source)
 
-            // Contour blanc
             let casing = MLNLineStyleLayer(identifier: "route-casing", source: source)
             casing.lineColor   = NSExpression(forConstantValue: UIColor.white)
             casing.lineWidth   = NSExpression(forConstantValue: 9)
@@ -167,7 +173,6 @@ struct MapLibreView: UIViewRepresentable {
             casing.lineJoin    = NSExpression(forConstantValue: "round")
             style.addLayer(casing)
 
-            // Ligne bleue principale
             let line = MLNLineStyleLayer(identifier: "route-line", source: source)
             line.lineColor = NSExpression(forConstantValue:
                 UIColor(red: 0.12, green: 0.47, blue: 1.0, alpha: 1))
@@ -175,49 +180,32 @@ struct MapLibreView: UIViewRepresentable {
             line.lineCap   = NSExpression(forConstantValue: "round")
             line.lineJoin  = NSExpression(forConstantValue: "round")
             style.addLayer(line)
-
-            // Centrer sur le début de l'itinéraire
-            if coords.count > 0 {
-                let cam = MLNMapCamera()
-                cam.centerCoordinate = coords[coords.count / 4]
-                cam.altitude = 8000
-                cam.pitch    = 55
-                mapView.setCamera(cam, withDuration: 1.2, animationTimingFunction: nil)
-            }
         }
 
-        // ── Vue d'annotation ─────────────────────────────────────────────────
+        // ── Vues d'annotation ─────────────────────────────────────────────────
         func mapView(_ mapView: MLNMapView, viewFor annotation: MLNAnnotation) -> MLNAnnotationView? {
             guard let ann = annotation as? RadarMapAnnotation,
                   let radar = ann.radar else { return nil }
-
-            let reuseID = "pin-\(radar.kind.rawValue)"
-            if let view = mapView.dequeueReusableAnnotationView(withIdentifier: reuseID)
-                           as? RadarPinView {
-                view.configure(kind: radar.kind,
-                               selected: radar == parent.selectedRadar)
-                return view
+            let id = "pin-\(radar.kind.rawValue)"
+            if let v = mapView.dequeueReusableAnnotationView(withIdentifier: id) as? RadarPinView {
+                v.configure(kind: radar.kind, selected: radar == parent.selectedRadar)
+                return v
             }
-            let view = RadarPinView(reuseIdentifier: reuseID)
-            view.configure(kind: radar.kind, selected: radar == parent.selectedRadar)
-            return view
+            let v = RadarPinView(reuseIdentifier: id)
+            v.configure(kind: radar.kind, selected: radar == parent.selectedRadar)
+            return v
         }
 
         func mapView(_ mapView: MLNMapView, didSelect annotation: MLNAnnotation) {
-            guard let ann = annotation as? RadarMapAnnotation,
-                  let radar = ann.radar else { return }
-            DispatchQueue.main.async { self.parent.selectedRadar = radar }
+            guard let ann = annotation as? RadarMapAnnotation, let r = ann.radar else { return }
+            DispatchQueue.main.async { self.parent.selectedRadar = r }
         }
 
-        func mapView(_ mapView: MLNMapView, didDeselect annotation: MLNAnnotation) {
-            // Ne pas fermer la sheet automatiquement
-        }
+        func mapView(_ mapView: MLNMapView, didDeselect annotation: MLNAnnotation) {}
 
         func mapView(_ mapView: MLNMapView, regionDidChangeWith reason: MLNCameraChangeReason,
                      animated: Bool) {
-            let center   = mapView.centerCoordinate
-            let altitude = mapView.camera.altitude
-            parent.onRegionChange?(center, altitude)
+            parent.onRegionChange?(mapView.centerCoordinate, mapView.camera.altitude)
         }
     }
 }
@@ -237,15 +225,12 @@ final class RadarPinView: MLNAnnotationView {
     private let labelL  = UILabel()
     private let pointer = UIImageView()
 
-    private var kind: RadarKind = .fixe
-
     override init(reuseIdentifier: String?) {
         super.init(reuseIdentifier: reuseIdentifier)
         isEnabled = true
         frame = CGRect(x: 0, y: 0, width: 50, height: 62)
         backgroundColor = .clear
 
-        // Circle (glow + fill)
         circle.layer.cornerRadius  = 16
         circle.layer.borderColor   = UIColor.white.withAlphaComponent(0.5).cgColor
         circle.layer.borderWidth   = 2
@@ -255,25 +240,20 @@ final class RadarPinView: MLNAnnotationView {
         circle.layer.shadowOffset  = CGSize(width: 0, height: 2)
         addSubview(circle)
 
-        // Icon
         iconIV.contentMode = .scaleAspectFit
         addSubview(iconIV)
 
-        // Label background
         labelBg.layer.cornerRadius = 5
         labelBg.layer.masksToBounds = true
         addSubview(labelBg)
 
-        // Label text
         labelL.font          = UIFont.systemFont(ofSize: 8, weight: .bold)
         labelL.textColor     = .white
         labelL.textAlignment = .center
         labelBg.addSubview(labelL)
 
-        // Pointer triangle
         let cfg = UIImage.SymbolConfiguration(pointSize: 6, weight: .bold)
-        pointer.image = UIImage(systemName: "arrowtriangle.down.fill",
-                                withConfiguration: cfg)
+        pointer.image = UIImage(systemName: "arrowtriangle.down.fill", withConfiguration: cfg)
         pointer.contentMode = .scaleAspectFit
         addSubview(pointer)
     }
@@ -281,7 +261,6 @@ final class RadarPinView: MLNAnnotationView {
     required init?(coder: NSCoder) { fatalError() }
 
     func configure(kind: RadarKind, selected: Bool) {
-        self.kind = kind
         let size: CGFloat = selected ? 40 : 30
         let color = UIColor(kind.color)
 
@@ -298,9 +277,9 @@ final class RadarPinView: MLNAnnotationView {
         let w: CGFloat = 46
         labelBg.frame = CGRect(x: 2, y: size + 2, width: w, height: 13)
         labelBg.backgroundColor = color.withAlphaComponent(0.88)
-        labelL.frame  = labelBg.bounds
+        labelL.frame = labelBg.bounds
 
-        pointer.tintColor   = color
+        pointer.tintColor = color
         pointer.image = pointer.image?.withTintColor(color, renderingMode: .alwaysOriginal)
         pointer.frame = CGRect(x: 19, y: size + 15, width: 12, height: 8)
 

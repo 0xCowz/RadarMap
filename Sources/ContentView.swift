@@ -7,6 +7,7 @@ import SwiftUI
 // MARK: - ContentView
 
 struct ContentView: View {
+    @Environment(\.colorScheme) var colorScheme
     @StateObject private var store    = RadarStore.shared
     @StateObject private var location = LocationService.shared
     @StateObject private var alertVM  = RadarAlertViewModel()
@@ -14,12 +15,14 @@ struct ContentView: View {
 
     @State private var selectedRadar: Radar?
     @State private var route: MKRoute?
+    @State private var isNavigating   = false
     @State private var showAlert      = false
     @State private var alertRadar: Radar?
     @State private var showFilters    = false
     @State private var showConfirmation = false
     @State private var visibleCenter: CLLocationCoordinate2D = .init(latitude: 48.8566, longitude: 2.3522)
     @State private var visibleAltitude: Double = 6000
+    @State private var regionTask: Task<Void, Never>?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -29,9 +32,18 @@ struct ContentView: View {
                 selectedRadar: $selectedRadar,
                 route: $route,
                 radars: nearbyRadars,
+                isNavigating: isNavigating,
+                colorScheme: colorScheme,
                 onRegionChange: { c, a in
-                    visibleCenter   = c
-                    visibleAltitude = a
+                    // Debounce 250 ms pour éviter les lags
+                    regionTask?.cancel()
+                    regionTask = Task {
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        if !Task.isCancelled {
+                            visibleCenter   = c
+                            visibleAltitude = a
+                        }
+                    }
                 }
             )
             .ignoresSafeArea()
@@ -112,7 +124,7 @@ struct ContentView: View {
                 RouteConfirmationSheet(
                     route: r,
                     radars: routeVM.routeRadars,
-                    onConfirm: { route = routeVM.route },
+                    onConfirm: { route = routeVM.route; isNavigating = true },
                     onCancel:  { routeVM.clearRoute() }
                 )
             }
@@ -229,6 +241,7 @@ struct ContentView: View {
         Button {
             routeVM.clearRoute()
             route = nil
+            isNavigating = false
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "xmark.circle.fill")
@@ -246,14 +259,23 @@ struct ContentView: View {
 
     // Radars visibles en fonction de l'altitude de la caméra
     private var nearbyRadars: [Radar] {
-        let all = store.filtered
-        let radiusDeg = max(0.05, visibleAltitude / 111_000)
-        let c = visibleCenter
-        let nearby = all.filter {
-            abs($0.coordinate.latitude  - c.latitude)  <= radiusDeg &&
-            abs($0.coordinate.longitude - c.longitude) <= radiusDeg * 1.4
+        // Cap selon le niveau de zoom : évite de charger 3350 pins d'un coup
+        let maxCount: Int
+        switch visibleAltitude {
+        case ..<3_000:   maxCount = 150
+        case ..<10_000:  maxCount = 80
+        case ..<30_000:  maxCount = 40
+        case ..<80_000:  maxCount = 20
+        default:         return []          // Trop loin, aucun pin
         }
-        return Array(nearby.prefix(400))
+        let radiusDeg = max(0.04, visibleAltitude / 111_000)
+        let c = visibleCenter
+        return Array(
+            store.filtered.filter {
+                abs($0.coordinate.latitude  - c.latitude)  <= radiusDeg &&
+                abs($0.coordinate.longitude - c.longitude) <= radiusDeg * 1.4
+            }.prefix(maxCount)
+        )
     }
 }
 
