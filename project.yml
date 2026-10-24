@@ -17,12 +17,12 @@ targets:
     assets: Resources/Assets.xcassets
     dependencies:
       - package: MapLibre
-        product: Mapbox
+        product: MapLibre
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.radarmap   # à remplacer par le vôtre
         DEVELOPMENT_TEAM: ""                              # votre Team ID Apple
-        SWIFT_VERSION: "5.10"
+        SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1"
     info:
       path: Info.plist

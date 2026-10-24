@@ -1,4 +1,4 @@
-import Mapbox
+import MapLibre
 import MapKit
 import SwiftUI
 import UIKit
