@@ -57,20 +57,46 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
     override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.distanceFilter = 50
+        manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
+        manager.distanceFilter  = 20
+        manager.pausesLocationUpdatesAutomatically = false
     }
 
     func start() {
-        manager.requestWhenInUseAuthorization()
-        manager.startUpdatingLocation()
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            manager.requestAlwaysAuthorization()
+        case .authorizedWhenInUse:
+            // Upgrade to Always so background tracking works
+            manager.requestAlwaysAuthorization()
+            enableBackground()
+            manager.startUpdatingLocation()
+        case .authorizedAlways:
+            enableBackground()
+            manager.startUpdatingLocation()
+        default:
+            break
+        }
     }
 
-    func locationManager(_ m: CLLocationManager, didUpdateLocations l: [CLLocation]) { location = l.last }
+    private func enableBackground() {
+        manager.allowsBackgroundLocationUpdates = true
+        manager.showsBackgroundLocationIndicator = true
+    }
+
+    func locationManager(_ m: CLLocationManager, didUpdateLocations l: [CLLocation]) {
+        location = l.last
+    }
 
     func locationManagerDidChangeAuthorization(_ m: CLLocationManager) {
-        if m.authorizationStatus == .authorizedWhenInUse || m.authorizationStatus == .authorizedAlways {
+        switch m.authorizationStatus {
+        case .authorizedAlways:
+            enableBackground()
             m.startUpdatingLocation()
+        case .authorizedWhenInUse:
+            m.startUpdatingLocation()
+        default:
+            break
         }
     }
 }

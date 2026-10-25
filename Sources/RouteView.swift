@@ -15,6 +15,7 @@ final class RouteViewModel: ObservableObject {
     @Published var showConfirmation = false
     @Published var error: String?
     @Published var searchHistory: [[String: String]] = []
+    @Published var routeDestinationTitle: String?
 
     private let completer = MKLocalSearchCompleter()
     private var delegate: CompleterDelegate?
@@ -60,6 +61,7 @@ final class RouteViewModel: ObservableObject {
         defer { isSearching = false }
 
         saveToHistory(title: completion.title, subtitle: completion.subtitle)
+        routeDestinationTitle = completion.title
         let req = MKLocalSearch.Request(completion: completion)
         do {
             let result = try await MKLocalSearch(request: req).start()
@@ -132,9 +134,10 @@ final class RouteViewModel: ObservableObject {
     }
 
     func clearRoute() {
-        route          = nil
-        routeRadars    = []
-        showConfirmation = false
+        route                 = nil
+        routeRadars           = []
+        showConfirmation      = false
+        routeDestinationTitle = nil
     }
 
     // Point le plus proche sur un segment AB depuis P

@@ -134,8 +134,18 @@ struct ContentView: View {
                 RouteConfirmationSheet(
                     route: r,
                     radars: routeVM.routeRadars,
-                    onConfirm: { route = routeVM.route; isNavigating = true },
-                    onCancel:  { routeVM.clearRoute() }
+                    onConfirm: {
+                        route = routeVM.route
+                        isNavigating = true
+                        LiveActivityManager.shared.setRoute(
+                            destination: routeVM.routeDestinationTitle,
+                            radarCount: routeVM.routeRadars.count
+                        )
+                    },
+                    onCancel: {
+                        routeVM.clearRoute()
+                        LiveActivityManager.shared.setRoute(destination: nil, radarCount: 0)
+                    }
                 )
             }
         }

@@ -10,13 +10,16 @@ packages:
     from: 6.31.0
 
 targets:
+  # ── Application principale ─────────────────────────────────────────
   RadarMap:
     type: application
     platform: iOS
-    sources: [Sources, Resources]
+    sources: [Sources, Resources, Shared]
     dependencies:
       - package: MapLibre
         product: MapLibre
+      - target: RadarMapWidgets
+        embed: true
     entitlements:
       path: RadarMap.entitlements
       properties:
@@ -38,7 +41,18 @@ targets:
             api.lucasmrq.work:
               NSExceptionAllowsInsecureHTTPLoads: false
               NSIncludesSubdomains: false
+        # Localisation — toujours, pour alertes radar en arrière-plan
         NSLocationWhenInUseUsageDescription: "Pour centrer la carte sur votre position et lister les radars proches."
+        NSLocationAlwaysAndWhenInUseUsageDescription: "Pour surveiller les radars en arrière-plan pendant la navigation avec Waze ou CarPlay."
+        NSLocationAlwaysUsageDescription: "Pour surveiller les radars en arrière-plan pendant la navigation."
+        # Arrière-plan
+        UIBackgroundModes:
+          - location
+          - audio
+          - fetch
+        # Live Activity (Dynamic Island)
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
           UISceneConfigurations:
@@ -46,3 +60,22 @@ targets:
               - UISceneClassName: CPTemplateApplicationScene
                 UISceneConfigurationName: CarPlay
                 UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).CarPlaySceneDelegate
+
+  # ── Widget Extension (Live Activity) ──────────────────────────────
+  RadarMapWidgets:
+    type: app-extension
+    platform: iOS
+    sources: [WidgetExtension, Shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.radarmap.widgets
+        DEVELOPMENT_TEAM: ""
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1"
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        SKIP_INSTALL: "YES"
+    info:
+      path: WidgetExtension/Info.plist
+      properties:
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension

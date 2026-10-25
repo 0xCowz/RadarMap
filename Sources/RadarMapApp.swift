@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 @main
 struct RadarMapApp: App {
@@ -10,6 +11,16 @@ struct RadarMapApp: App {
 }
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
+
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Start background alert monitoring (audio + local notifications + Live Activity)
+        BackgroundAlertService.shared.start()
+        // Start Live Activity on the Dynamic Island / Lock Screen
+        LiveActivityManager.shared.start()
+        return true
+    }
+
     func application(_ application: UIApplication,
                      configurationForConnecting session: UISceneSession,
                      options: UIScene.ConnectionOptions) -> UISceneConfiguration {
@@ -18,5 +29,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             config.delegateClass = CarPlaySceneDelegate.self
         }
         return config
+    }
+
+    func applicationWillTerminate(_ application: UIApplication) {
+        LiveActivityManager.shared.stop()
     }
 }
