@@ -14,7 +14,7 @@ struct MapLibreView: UIViewRepresentable {
     var onRegionChange: ((CLLocationCoordinate2D, Double) -> Void)?
 
     func makeUIView(context: Context) -> MLNMapView {
-        let styleURL = URL(string: "https://tiles.openfreemap.org/styles/liberty")!
+        let styleURL = URL(string: "https://tiles.openfreemap.org/styles/bright")!
         let mapView = MLNMapView(frame: .zero, styleURL: styleURL)
         mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
@@ -107,41 +107,32 @@ struct MapLibreView: UIViewRepresentable {
 
         // ── Apparence carte (light / dark) ────────────────────────────────────
         private func applyAppearance(to style: MLNStyle, dark: Bool) {
-            // Fond
+            guard dark else { return }   // Light : le style bright est déjà bien, on ne touche à rien
+
+            // Dark mode uniquement : teinter les calques principaux
             if let bg = style.layer(withIdentifier: "background") as? MLNBackgroundStyleLayer {
                 bg.backgroundColor = NSExpression(forConstantValue:
-                    dark ? UIColor(red: 0.07, green: 0.08, blue: 0.12, alpha: 1)
-                         : UIColor(red: 0.97, green: 0.96, blue: 0.92, alpha: 1))
+                    UIColor(red: 0.07, green: 0.08, blue: 0.12, alpha: 1))
             }
-            // Zones résidentielles / terrain neutre
-            for id in ["landuse", "landuse-residential", "landuse-commercial", "landuse-industrial"] {
+            let darkLand = UIColor(red: 0.11, green: 0.12, blue: 0.17, alpha: 1)
+            for id in style.layers.compactMap({ $0 as? MLNFillStyleLayer }).map(\.identifier)
+                where id.hasPrefix("landuse") || id.hasPrefix("landcover") || id == "land" {
                 if let l = style.layer(withIdentifier: id) as? MLNFillStyleLayer {
-                    l.fillColor = NSExpression(forConstantValue:
-                        dark ? UIColor(red: 0.10, green: 0.11, blue: 0.16, alpha: 1)
-                             : UIColor(red: 0.94, green: 0.93, blue: 0.89, alpha: 1))
+                    l.fillColor = NSExpression(forConstantValue: darkLand)
                 }
             }
-            // Végétation
-            for id in ["landcover-grass", "landcover-wood", "landcover-scrub"] {
-                if let l = style.layer(withIdentifier: id) as? MLNFillStyleLayer {
-                    l.fillColor = NSExpression(forConstantValue:
-                        dark ? UIColor(red: 0.10, green: 0.16, blue: 0.12, alpha: 1)
-                             : UIColor(red: 0.82, green: 0.93, blue: 0.73, alpha: 1))
-                }
-            }
-            // Eau
             if let w = style.layer(withIdentifier: "water") as? MLNFillStyleLayer {
                 w.fillColor = NSExpression(forConstantValue:
-                    dark ? UIColor(red: 0.06, green: 0.16, blue: 0.32, alpha: 1)
-                         : UIColor(red: 0.52, green: 0.79, blue: 0.97, alpha: 1))
+                    UIColor(red: 0.06, green: 0.14, blue: 0.28, alpha: 1))
             }
-            // Routes
-            let roadColor = dark ? UIColor(red: 0.35, green: 0.62, blue: 1.00, alpha: 1)
-                                 : UIColor(red: 0.18, green: 0.50, blue: 0.95, alpha: 1)
-            for id in ["road-primary", "road-secondary", "highway"] {
-                if let l = style.layer(withIdentifier: id) as? MLNLineStyleLayer {
-                    l.lineColor = NSExpression(forConstantValue: roadColor)
-                }
+            let darkRoad = UIColor(red: 0.20, green: 0.22, blue: 0.30, alpha: 1)
+            for l in style.layers.compactMap({ $0 as? MLNLineStyleLayer })
+                where l.identifier.hasPrefix("road") || l.identifier.hasPrefix("highway") || l.identifier.hasPrefix("tunnel") {
+                l.lineColor = NSExpression(forConstantValue: darkRoad)
+            }
+            for l in style.layers.compactMap({ $0 as? MLNFillStyleLayer })
+                where l.identifier.hasPrefix("road") || l.identifier.hasPrefix("tunnel") {
+                l.fillColor = NSExpression(forConstantValue: darkRoad)
             }
         }
 
