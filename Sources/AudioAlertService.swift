@@ -102,10 +102,10 @@ final class AudioAlertService: NSObject, ObservableObject, AVSpeechSynthesizerDe
 
         // Nettoyer les radars devenus lointains
         let ids = Set(radars.map { $0.id })
-        announced = announced.filter { key in
+        announced = Set(announced.filter { key in
             let id = key.components(separatedBy: "-").dropLast().joined(separator: "-")
             return ids.contains(id)
-        }
+        })
     }
 
     // MARK: - AVSpeechSynthesizerDelegate
