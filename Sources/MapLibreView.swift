@@ -100,8 +100,8 @@ struct MapLibreView: UIViewRepresentable {
             ext.fillExtrusionBase   = NSExpression(forKeyPath: "render_min_height")
             ext.fillExtrusionHeight = NSExpression(forKeyPath: "render_height")
             ext.fillExtrusionColor  = NSExpression(forConstantValue:
-                UIColor(red: 0.85, green: 0.88, blue: 0.92, alpha: 1))
-            ext.fillExtrusionOpacity = NSExpression(forConstantValue: 0.75)
+                UIColor(red: 0.90, green: 0.91, blue: 0.95, alpha: 1))
+            ext.fillExtrusionOpacity = NSExpression(forConstantValue: 0.65)
             style.addLayer(ext)
         }
 
@@ -110,28 +110,34 @@ struct MapLibreView: UIViewRepresentable {
             // Fond
             if let bg = style.layer(withIdentifier: "background") as? MLNBackgroundStyleLayer {
                 bg.backgroundColor = NSExpression(forConstantValue:
-                    dark ? UIColor(red: 0.10, green: 0.11, blue: 0.13, alpha: 1)
-                         : UIColor(red: 0.94, green: 0.94, blue: 0.91, alpha: 1))
+                    dark ? UIColor(red: 0.07, green: 0.08, blue: 0.12, alpha: 1)
+                         : UIColor(red: 0.97, green: 0.96, blue: 0.92, alpha: 1))
             }
-            // Zones de terrain
-            for id in ["landuse", "landuse-residential", "landcover-grass",
-                        "landcover-wood", "landcover-scrub", "landuse-commercial",
-                        "landuse-industrial"] {
+            // Zones résidentielles / terrain neutre
+            for id in ["landuse", "landuse-residential", "landuse-commercial", "landuse-industrial"] {
                 if let l = style.layer(withIdentifier: id) as? MLNFillStyleLayer {
                     l.fillColor = NSExpression(forConstantValue:
-                        dark ? UIColor(red: 0.13, green: 0.15, blue: 0.17, alpha: 1)
-                             : UIColor(red: 0.88, green: 0.92, blue: 0.83, alpha: 1))
+                        dark ? UIColor(red: 0.10, green: 0.11, blue: 0.16, alpha: 1)
+                             : UIColor(red: 0.94, green: 0.93, blue: 0.89, alpha: 1))
+                }
+            }
+            // Végétation
+            for id in ["landcover-grass", "landcover-wood", "landcover-scrub"] {
+                if let l = style.layer(withIdentifier: id) as? MLNFillStyleLayer {
+                    l.fillColor = NSExpression(forConstantValue:
+                        dark ? UIColor(red: 0.10, green: 0.16, blue: 0.12, alpha: 1)
+                             : UIColor(red: 0.82, green: 0.93, blue: 0.73, alpha: 1))
                 }
             }
             // Eau
             if let w = style.layer(withIdentifier: "water") as? MLNFillStyleLayer {
                 w.fillColor = NSExpression(forConstantValue:
-                    dark ? UIColor(red: 0.08, green: 0.14, blue: 0.25, alpha: 1)
-                         : UIColor(red: 0.55, green: 0.75, blue: 0.90, alpha: 1))
+                    dark ? UIColor(red: 0.06, green: 0.16, blue: 0.32, alpha: 1)
+                         : UIColor(red: 0.52, green: 0.79, blue: 0.97, alpha: 1))
             }
             // Routes
-            let roadColor = dark ? UIColor(red: 0.30, green: 0.50, blue: 0.80, alpha: 1)
-                                 : UIColor(red: 0.15, green: 0.45, blue: 0.85, alpha: 1)
+            let roadColor = dark ? UIColor(red: 0.35, green: 0.62, blue: 1.00, alpha: 1)
+                                 : UIColor(red: 0.18, green: 0.50, blue: 0.95, alpha: 1)
             for id in ["road-primary", "road-secondary", "highway"] {
                 if let l = style.layer(withIdentifier: id) as? MLNLineStyleLayer {
                     l.lineColor = NSExpression(forConstantValue: roadColor)
