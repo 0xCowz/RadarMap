@@ -167,6 +167,21 @@ struct Radar: Identifiable, Hashable {
         let equipement, emplacement, route, direction, departement: String
     }
 
+    init(id: String, kind: RadarKind, commissioned: Date?, vma: Int?,
+         coordinate: CLLocationCoordinate2D, equipement: RadarEquipement,
+         emplacement: String, route: String, direction: String, departement: String) {
+        self.id          = id
+        self.kind        = kind
+        self.commissioned = commissioned
+        self.vma         = vma
+        self.coordinate  = coordinate
+        self.equipement  = equipement
+        self.emplacement = emplacement
+        self.route       = route
+        self.direction   = direction
+        self.departement = departement
+    }
+
     init?(from r: APIRadar) {
         guard let kind = RadarKind(rawValue: r.type) else { return nil }
         let isoFmt = ISO8601DateFormatter()
