@@ -14,10 +14,12 @@ final class RouteViewModel: ObservableObject {
     @Published var routeRadars: [Radar] = []
     @Published var showConfirmation = false
     @Published var error: String?
+    @Published var searchHistory: [[String: String]] = []
 
     private let completer = MKLocalSearchCompleter()
     private var delegate: CompleterDelegate?
     private var debounce: AnyCancellable?
+    private let historyKey = "searchHistory"
 
     init() {
         let d = CompleterDelegate { [weak self] results in
@@ -26,6 +28,25 @@ final class RouteViewModel: ObservableObject {
         delegate      = d
         completer.delegate   = d
         completer.resultTypes = .address
+        searchHistory = (UserDefaults.standard.array(forKey: historyKey) as? [[String: String]]) ?? []
+    }
+
+    func saveToHistory(title: String, subtitle: String) {
+        var h = searchHistory
+        h.removeAll { $0["title"] == title }
+        h.insert(["title": title, "subtitle": subtitle], at: 0)
+        searchHistory = Array(h.prefix(6))
+        UserDefaults.standard.set(searchHistory, forKey: historyKey)
+    }
+
+    func removeFromHistory(at offsets: IndexSet) {
+        searchHistory.remove(atOffsets: offsets)
+        UserDefaults.standard.set(searchHistory, forKey: historyKey)
+    }
+
+    func clearHistory() {
+        searchHistory = []
+        UserDefaults.standard.removeObject(forKey: historyKey)
     }
 
     func search(for text: String) {
@@ -38,7 +59,7 @@ final class RouteViewModel: ObservableObject {
         error = nil
         defer { isSearching = false }
 
-        // Geocode the suggestion
+        saveToHistory(title: completion.title, subtitle: completion.subtitle)
         let req = MKLocalSearch.Request(completion: completion)
         do {
             let result = try await MKLocalSearch(request: req).start()
@@ -177,10 +198,10 @@ struct RouteSearchBar: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
 
-            // Suggestions
+            // Suggestions autocomplete
             if !vm.suggestions.isEmpty && focused {
                 VStack(spacing: 0) {
-                    ForEach(vm.suggestions.prefix(6), id: \.self) { sug in
+                    ForEach(Array(vm.suggestions.prefix(6).enumerated()), id: \.offset) { idx, sug in
                         Button {
                             focused = false
                             Task { await vm.selectSuggestion(sug, store: store) }
@@ -204,8 +225,60 @@ struct RouteSearchBar: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                         }
-                        Divider().padding(.leading, 44)
+                        if idx < min(5, vm.suggestions.count - 1) {
+                            Divider().padding(.leading, 44)
+                        }
                     }
+                }
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .shadow(color: .black.opacity(0.1), radius: 6, y: 3)
+                .padding(.top, 6)
+            }
+
+            // Historique (quand champ vide et focus)
+            if vm.suggestions.isEmpty && focused && !vm.searchHistory.isEmpty {
+                VStack(spacing: 0) {
+                    HStack {
+                        Text("Récents")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Effacer") { vm.clearHistory() }
+                            .font(.system(size: 12))
+                            .foregroundStyle(.blue)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 10)
+                    .padding(.bottom, 4)
+                    ForEach(Array(vm.searchHistory.enumerated()), id: \.offset) { idx, item in
+                        Button {
+                            focused = false
+                            vm.query = item["title"] ?? ""
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "clock.arrow.circlepath")
+                                    .foregroundStyle(.secondary)
+                                    .font(.system(size: 16))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item["title"] ?? "")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                    if let sub = item["subtitle"], !sub.isEmpty {
+                                        Text(sub)
+                                            .font(.system(size: 12))
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer()
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                        }
+                        if idx < vm.searchHistory.count - 1 {
+                            Divider().padding(.leading, 44)
+                        }
+                    }
+                    .padding(.bottom, 6)
                 }
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
                 .shadow(color: .black.opacity(0.1), radius: 6, y: 3)

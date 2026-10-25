@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var showAlert      = false
     @State private var alertRadar: Radar?
     @State private var showFilters    = false
+    @State private var showSettings   = false
     @State private var showConfirmation = false
     @State private var showVoiceSetup = !UserDefaults.standard.bool(forKey: "voiceSetupDone")
     @State private var visibleCenter: CLLocationCoordinate2D = .init(latitude: 48.8566, longitude: 2.3522)
@@ -122,6 +123,12 @@ struct ContentView: View {
                 .presentationBackground(.regularMaterial)
                 .presentationCornerRadius(28)
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(store: store)
+                .presentationDetents([.medium, .large])
+                .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(28)
+        }
         .sheet(isPresented: $showConfirmation) {
             if let r = routeVM.route {
                 RouteConfirmationSheet(
@@ -172,8 +179,13 @@ struct ContentView: View {
                     .foregroundStyle(.white.opacity(0.55))
             }
             Spacer()
-            HeaderButton(symbol: "line.3.horizontal.decrease.circle.fill") {
-                showFilters = true
+            HStack(spacing: 8) {
+                HeaderButton(symbol: "gearshape.fill") {
+                    showSettings = true
+                }
+                HeaderButton(symbol: "line.3.horizontal.decrease.circle.fill") {
+                    showFilters = true
+                }
             }
         }
         .padding(.horizontal, 20)

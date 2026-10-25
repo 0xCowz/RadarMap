@@ -7,6 +7,8 @@ final class RadarStore: ObservableObject {
 
     @Published var all: [Radar] = Radar.loadBundled()   // Démarrage immédiat sur le CSV
     @Published var isLoadingRemote = false
+    @Published var dataSource: String = "CSV embarqué"
+    @Published var lastUpdated: Date = Date()
     private let key = "enabledKinds"
 
     @Published var enabledKinds: Set<RadarKind> {
@@ -23,7 +25,11 @@ final class RadarStore: ObservableObject {
     func refreshFromAPI() async {
         isLoadingRemote = true
         let remote = await Radar.loadAll()
-        if !remote.isEmpty { all = remote }
+        if !remote.isEmpty {
+            all = remote
+            dataSource = "API NAS"
+            lastUpdated = Date()
+        }
         isLoadingRemote = false
     }
 
