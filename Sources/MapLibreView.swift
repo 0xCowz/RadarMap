@@ -192,12 +192,13 @@ struct MapLibreView: UIViewRepresentable {
             guard let ann = annotation as? RadarMapAnnotation,
                   let radar = ann.radar else { return nil }
             let id = "pin-\(radar.kind.rawValue)"
+            let selected = radar == parent.selectedRadar
             if let v = mapView.dequeueReusableAnnotationView(withIdentifier: id) as? RadarPinView {
-                v.configure(kind: radar.kind, selected: radar == parent.selectedRadar)
+                v.configure(kind: radar.kind, vma: radar.vma, selected: selected)
                 return v
             }
             let v = RadarPinView(reuseIdentifier: id)
-            v.configure(kind: radar.kind, selected: radar == parent.selectedRadar)
+            v.configure(kind: radar.kind, vma: radar.vma, selected: selected)
             return v
         }
 
@@ -258,71 +259,163 @@ final class RadarMapAnnotation: MLNPointAnnotation {
 // MARK: - RadarPinView
 
 final class RadarPinView: MLNAnnotationView {
-    private let circle  = UIView()
-    private let iconIV  = UIImageView()
-    private let labelBg = UIView()
-    private let labelL  = UILabel()
-    private let pointer = UIImageView()
+
+    // Layers & subviews
+    private let shadowLayer = CAShapeLayer()
+    private let bodyLayer   = CAShapeLayer()
+    private let rimLayer    = CAShapeLayer()
+    private let gradLayer   = CAGradientLayer()
+    private let iconIV      = UIImageView()
+    private let vmaBg       = UIView()
+    private let vmaLabel    = UILabel()
+
+    // Sizes
+    private static let normalD:   CGFloat = 36
+    private static let selectedD: CGFloat = 48
+    private static let normalTail:   CGFloat = 12
+    private static let selectedTail: CGFloat = 16
 
     override init(reuseIdentifier: String?) {
         super.init(reuseIdentifier: reuseIdentifier)
         isEnabled = true
-        frame = CGRect(x: 0, y: 0, width: 50, height: 62)
         backgroundColor = .clear
 
-        circle.layer.cornerRadius  = 16
-        circle.layer.borderColor   = UIColor.white.withAlphaComponent(0.5).cgColor
-        circle.layer.borderWidth   = 2
-        circle.layer.shadowColor   = UIColor.black.cgColor
-        circle.layer.shadowOpacity = 0.3
-        circle.layer.shadowRadius  = 4
-        circle.layer.shadowOffset  = CGSize(width: 0, height: 2)
-        addSubview(circle)
+        // Order: shadow → body fill (gradient) → rim → icon → VMA badge
+        layer.addSublayer(shadowLayer)
+        layer.addSublayer(bodyLayer)
+        gradLayer.type = .axial
+        gradLayer.startPoint = CGPoint(x: 0.3, y: 0)
+        gradLayer.endPoint   = CGPoint(x: 0.7, y: 1)
+        layer.addSublayer(gradLayer)
+        layer.addSublayer(rimLayer)
 
         iconIV.contentMode = .scaleAspectFit
         addSubview(iconIV)
 
-        labelBg.layer.cornerRadius = 5
-        labelBg.layer.masksToBounds = true
-        addSubview(labelBg)
+        vmaBg.backgroundColor = .white
+        vmaBg.layer.borderColor = UIColor.systemRed.cgColor
+        vmaBg.layer.borderWidth = 2
+        addSubview(vmaBg)
 
-        labelL.font          = UIFont.systemFont(ofSize: 8, weight: .bold)
-        labelL.textColor     = .white
-        labelL.textAlignment = .center
-        labelBg.addSubview(labelL)
-
-        let cfg = UIImage.SymbolConfiguration(pointSize: 6, weight: .bold)
-        pointer.image = UIImage(systemName: "arrowtriangle.down.fill", withConfiguration: cfg)
-        pointer.contentMode = .scaleAspectFit
-        addSubview(pointer)
+        vmaLabel.textAlignment = .center
+        vmaLabel.textColor = .black
+        vmaBg.addSubview(vmaLabel)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     func configure(kind: RadarKind, selected: Bool) {
-        let size: CGFloat = selected ? 40 : 30
+        let d    = selected ? Self.selectedD    : Self.normalD
+        let tail = selected ? Self.selectedTail : Self.normalTail
+        let pad: CGFloat = 6          // padding around pin so shadow isn't clipped
+        let vmaD: CGFloat = selected ? 24 : 18
+        let totalW = d + vmaD * 0.6 + pad * 2   // room for VMA badge at top-right
+        let totalH = d + tail + pad * 2
+
+        frame = CGRect(x: 0, y: 0, width: totalW, height: totalH)
+
         let color = UIColor(kind.color)
+        let path  = tearDrop(cx: pad + d / 2, cy: pad + d / 2, d: d, tail: tail)
 
-        circle.frame = CGRect(x: (50 - size) / 2, y: 0, width: size, height: size)
-        circle.layer.cornerRadius = size / 2
-        circle.backgroundColor = color
+        // Shadow (blurred, offset)
+        shadowLayer.path        = path.cgPath
+        shadowLayer.fillColor   = color.withAlphaComponent(0.45).cgColor
+        shadowLayer.shadowColor = color.cgColor
+        shadowLayer.shadowOpacity = 0.65
+        shadowLayer.shadowRadius  = selected ? 10 : 6
+        shadowLayer.shadowOffset  = CGSize(width: 0, height: selected ? 4 : 2)
+        shadowLayer.frame         = bounds
 
-        let cfg = UIImage.SymbolConfiguration(pointSize: selected ? 16 : 12, weight: .bold)
+        // Body solid fill (used as mask for gradient)
+        let bodyMask = CAShapeLayer()
+        bodyMask.path = path.cgPath
+        bodyLayer.path      = path.cgPath
+        bodyLayer.fillColor = color.cgColor
+        bodyLayer.frame     = bounds
+
+        // Gradient overlay (lighter top-left corner = glossy effect)
+        gradLayer.frame  = CGRect(x: pad, y: pad, width: d, height: d + tail)
+        gradLayer.colors = [
+            color.lighter(by: 0.30).cgColor,
+            color.cgColor,
+            color.darker(by: 0.10).cgColor
+        ]
+        gradLayer.locations = [0, 0.55, 1]
+        let gradMask = CAShapeLayer()
+        gradMask.path = tearDrop(cx: d / 2, cy: d / 2, d: d, tail: tail).cgPath
+        gradLayer.mask = gradMask
+
+        // White inner rim
+        let rimPath = UIBezierPath(
+            arcCenter: CGPoint(x: pad + d / 2, y: pad + d / 2),
+            radius: d / 2 - 2.5,
+            startAngle: 0, endAngle: .pi * 2, clockwise: true)
+        rimLayer.path        = rimPath.cgPath
+        rimLayer.fillColor   = UIColor.clear.cgColor
+        rimLayer.strokeColor = UIColor.white.withAlphaComponent(0.35).cgColor
+        rimLayer.lineWidth   = 1.5
+        rimLayer.frame       = bounds
+
+        // Icon
+        let iconPt: CGFloat = d * 0.40
+        let cfg = UIImage.SymbolConfiguration(pointSize: iconPt, weight: .bold)
         iconIV.image = UIImage(systemName: kind.symbol, withConfiguration: cfg)?
             .withTintColor(.white, renderingMode: .alwaysOriginal)
-        iconIV.frame = circle.frame
+        iconIV.frame = CGRect(x: pad, y: pad, width: d, height: d)
 
-        labelL.text = kind.shortLabel
-        let w: CGFloat = 46
-        labelBg.frame = CGRect(x: 2, y: size + 2, width: w, height: 13)
-        labelBg.backgroundColor = color.withAlphaComponent(0.88)
-        labelL.frame = labelBg.bounds
+        // VMA badge (top-right corner)
+        vmaBg.frame = CGRect(
+            x: pad + d - vmaD * 0.45,
+            y: pad - vmaD * 0.35,
+            width: vmaD, height: vmaD)
+        vmaBg.layer.cornerRadius = vmaD / 2
+        vmaBg.layer.borderWidth  = vmaD <= 18 ? 1.5 : 2
+        vmaBg.isHidden = true   // shown in configure(kind:vma:selected:)
 
-        pointer.tintColor = color
-        pointer.image = pointer.image?.withTintColor(color, renderingMode: .alwaysOriginal)
-        pointer.frame = CGRect(x: 19, y: size + 15, width: 12, height: 8)
+        vmaLabel.font  = UIFont.systemFont(ofSize: vmaD * 0.38, weight: .black)
+        vmaLabel.frame = vmaBg.bounds
+    }
 
-        frame.size.height = size + 24
+    func configure(kind: RadarKind, vma: Int?, selected: Bool) {
+        configure(kind: kind, selected: selected)
+        if let speed = vma {
+            vmaBg.isHidden = false
+            vmaLabel.text  = "\(speed)"
+        } else {
+            vmaBg.isHidden = true
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func tearDrop(cx: CGFloat, cy: CGFloat, d: CGFloat, tail: CGFloat) -> UIBezierPath {
+        let r = d / 2
+        // Open arc from ~130° to ~50° (bottom-left to bottom-right, clockwise via top)
+        let a0 = CGFloat.pi * (0.5 + 0.22)   // 144°
+        let a1 = CGFloat.pi * (0.5 - 0.22)   //  36°
+        let path = UIBezierPath(
+            arcCenter: CGPoint(x: cx, y: cy),
+            radius: r, startAngle: a0, endAngle: a1, clockwise: true)
+        path.addLine(to: CGPoint(x: cx, y: cy + r + tail))
+        path.close()
+        return path
+    }
+}
+
+// MARK: - UIColor helpers
+
+private extension UIColor {
+    func lighter(by amount: CGFloat) -> UIColor {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return UIColor(hue: h, saturation: max(0, s - amount * 0.3),
+                       brightness: min(1, b + amount), alpha: a)
+    }
+    func darker(by amount: CGFloat) -> UIColor {
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return UIColor(hue: h, saturation: min(1, s + amount * 0.1),
+                       brightness: max(0, b - amount), alpha: a)
     }
 }
 

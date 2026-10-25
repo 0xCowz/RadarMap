@@ -39,9 +39,9 @@ enum RadarKind: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .fixe:        "camera.fill"
         case .discriminant:"car.2.fill"
-        case .feuRouge:    "exclamationmark.octagon.fill"
-        case .vitMoyenne:  "arrow.left.and.right"
-        case .pn:          "tram.fill"
+        case .feuRouge:    "stoplights.fill"
+        case .vitMoyenne:  "speedometer"
+        case .pn:          "train.side.front.car"
         case .itineraire:  "road.lanes"
         }
     }
