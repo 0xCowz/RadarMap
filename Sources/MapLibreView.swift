@@ -213,7 +213,7 @@ struct MapLibreView: UIViewRepresentable {
 
         func mapView(_ mapView: MLNMapView, regionWillChangeWith reason: MLNCameraChangeReason,
                      animated: Bool) {
-            let gestures: MLNCameraChangeReason = [.gesturePan, .gestureZoom,
+            let gestures: MLNCameraChangeReason = [.gesturePan, .gesturePinch,
                                                     .gestureRotate, .gestureTilt]
             guard !reason.intersection(gestures).isEmpty else { return }
             // L'utilisateur déplace la carte manuellement
