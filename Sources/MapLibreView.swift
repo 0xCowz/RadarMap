@@ -357,11 +357,12 @@ final class RadarPinView: MLNAnnotationView {
         rimLayer.frame       = bounds
 
         // Icon
-        let iconPt: CGFloat = d * 0.40
-        let cfg = UIImage.SymbolConfiguration(pointSize: iconPt, weight: .bold)
-        iconIV.image = UIImage(systemName: kind.symbol, withConfiguration: cfg)?
-            .withTintColor(.white, renderingMode: .alwaysOriginal)
-        iconIV.frame = CGRect(x: pad, y: pad, width: d, height: d)
+        let iconSize = d * 0.56
+        iconIV.image = makeRadarIcon(kind: kind, size: iconSize)
+        iconIV.frame = CGRect(
+            x: pad + (d - iconSize) / 2,
+            y: pad + (d - iconSize) / 2,
+            width: iconSize, height: iconSize)
 
         // VMA badge (top-right corner)
         vmaBg.frame = CGRect(
@@ -384,6 +385,159 @@ final class RadarPinView: MLNAnnotationView {
         } else {
             vmaBg.isHidden = true
         }
+    }
+
+    // MARK: - Custom icon rendering
+
+    private func makeRadarIcon(kind: RadarKind, size: CGFloat) -> UIImage {
+        let sz = CGSize(width: size, height: size)
+        return UIGraphicsImageRenderer(size: sz).image { _ in
+            switch kind {
+            case .fixe:         drawCameraIcon(s: size)
+            case .discriminant: drawDiscriminantIcon(s: size)
+            case .feuRouge:     drawTrafficLightIcon(s: size)
+            case .vitMoyenne:   drawAverageSpeedIcon(s: size)
+            case .pn:           drawRailCrossingIcon(s: size)
+            case .itineraire:   drawItineraireIcon(s: size)
+            }
+        }
+    }
+
+    private func drawCameraIcon(s: CGFloat) {
+        let white = UIColor.white
+        white.setFill(); white.setStroke()
+        // Body
+        UIBezierPath(roundedRect: CGRect(x: s*0.05, y: s*0.28, width: s*0.90, height: s*0.52),
+                     cornerRadius: s*0.12).fill()
+        // Viewfinder bump
+        UIBezierPath(roundedRect: CGRect(x: s*0.30, y: s*0.14, width: s*0.24, height: s*0.17),
+                     cornerRadius: s*0.06).fill()
+        // Lens glass
+        UIColor.white.withAlphaComponent(0.28).setFill()
+        let lensRect = CGRect(x: s*0.30, y: s*0.34, width: s*0.40, height: s*0.40)
+        UIBezierPath(ovalIn: lensRect).fill()
+        // Lens ring
+        white.setStroke()
+        let ring = UIBezierPath(ovalIn: lensRect.insetBy(dx: s*0.03, dy: s*0.03))
+        ring.lineWidth = s * 0.07; ring.stroke()
+        // Lens center dot
+        white.setFill()
+        UIBezierPath(ovalIn: CGRect(x: s*0.42, y: s*0.46, width: s*0.16, height: s*0.16)).fill()
+    }
+
+    private func drawDiscriminantIcon(s: CGFloat) {
+        let white = UIColor.white
+        white.setFill(); white.setStroke()
+        // Camera body
+        UIBezierPath(roundedRect: CGRect(x: s*0.08, y: s*0.05, width: s*0.84, height: s*0.44),
+                     cornerRadius: s*0.10).fill()
+        // Lens
+        let lr = CGRect(x: s*0.33, y: s*0.10, width: s*0.34, height: s*0.32)
+        UIColor.white.withAlphaComponent(0.25).setFill()
+        UIBezierPath(ovalIn: lr).fill()
+        white.setStroke()
+        let ring = UIBezierPath(ovalIn: lr.insetBy(dx: s*0.03, dy: s*0.03))
+        ring.lineWidth = s * 0.065; ring.stroke()
+        // Two dashed road lanes
+        white.setStroke()
+        for laneY in [s*0.64, s*0.84] {
+            let lane = UIBezierPath()
+            lane.move(to: CGPoint(x: s*0.06, y: laneY))
+            lane.addLine(to: CGPoint(x: s*0.94, y: laneY))
+            lane.lineWidth = s * 0.08
+            lane.lineCapStyle = .round
+            lane.setLineDash([s*0.14, s*0.08], count: 2, phase: 0)
+            lane.stroke()
+        }
+    }
+
+    private func drawTrafficLightIcon(s: CGFloat) {
+        // Housing
+        let housing = UIBezierPath(
+            roundedRect: CGRect(x: s*0.28, y: s*0.03, width: s*0.44, height: s*0.90),
+            cornerRadius: s*0.10)
+        UIColor.white.withAlphaComponent(0.22).setFill(); housing.fill()
+        housing.lineWidth = s * 0.07; UIColor.white.setStroke(); housing.stroke()
+        // Three colored lights: red / amber / green
+        let cx = s * 0.50
+        let dr = s * 0.13
+        let lights: [(CGFloat, UIColor)] = [
+            (s*0.22, UIColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)),
+            (s*0.50, UIColor(red: 1.0, green: 0.72, blue: 0.00, alpha: 1)),
+            (s*0.78, UIColor(red: 0.22, green: 0.90, blue: 0.35, alpha: 1)),
+        ]
+        for (y, color) in lights {
+            color.setFill()
+            UIBezierPath(ovalIn: CGRect(x: cx-dr, y: y-dr, width: dr*2, height: dr*2)).fill()
+        }
+    }
+
+    private func drawAverageSpeedIcon(s: CGFloat) {
+        let white = UIColor.white
+        white.setFill(); white.setStroke()
+        // Left post
+        let lp = UIBezierPath()
+        lp.move(to: CGPoint(x: s*0.22, y: s*0.15))
+        lp.addLine(to: CGPoint(x: s*0.22, y: s*0.75))
+        lp.lineWidth = s * 0.10; lp.lineCapStyle = .round; lp.stroke()
+        // Right post
+        let rp = UIBezierPath()
+        rp.move(to: CGPoint(x: s*0.78, y: s*0.15))
+        rp.addLine(to: CGPoint(x: s*0.78, y: s*0.75))
+        rp.lineWidth = s * 0.10; rp.lineCapStyle = .round; rp.stroke()
+        // Arrow shaft
+        let shaft = UIBezierPath()
+        shaft.move(to: CGPoint(x: s*0.22, y: s*0.45))
+        shaft.addLine(to: CGPoint(x: s*0.60, y: s*0.45))
+        shaft.lineWidth = s * 0.08; shaft.lineCapStyle = .round; shaft.stroke()
+        // Arrow head
+        let head = UIBezierPath()
+        head.move(to: CGPoint(x: s*0.58, y: s*0.31))
+        head.addLine(to: CGPoint(x: s*0.84, y: s*0.45))
+        head.addLine(to: CGPoint(x: s*0.58, y: s*0.59))
+        head.close(); head.fill()
+        // Three dots (avg indicator)
+        let dr = s * 0.055
+        for dotX in [s*0.33, s*0.50, s*0.67] {
+            UIBezierPath(ovalIn: CGRect(x: dotX-dr, y: s*0.83-dr, width: dr*2, height: dr*2)).fill()
+        }
+    }
+
+    private func drawRailCrossingIcon(s: CGFloat) {
+        let white = UIColor.white
+        white.setFill(); white.setStroke()
+        // Outer circle
+        let circle = UIBezierPath(ovalIn: CGRect(x: s*0.06, y: s*0.06, width: s*0.88, height: s*0.88))
+        circle.lineWidth = s * 0.07; circle.stroke()
+        // X crossbuck
+        let cross = UIBezierPath()
+        cross.move(to: CGPoint(x: s*0.22, y: s*0.22)); cross.addLine(to: CGPoint(x: s*0.78, y: s*0.78))
+        cross.move(to: CGPoint(x: s*0.78, y: s*0.22)); cross.addLine(to: CGPoint(x: s*0.22, y: s*0.78))
+        cross.lineWidth = s * 0.13; cross.lineCapStyle = .round; cross.stroke()
+    }
+
+    private func drawItineraireIcon(s: CGFloat) {
+        let white = UIColor.white
+        white.setFill(); white.setStroke()
+        // Autoroute shield (pentagon)
+        let shield = UIBezierPath()
+        shield.move(to: CGPoint(x: s*0.50, y: s*0.96))
+        shield.addLine(to: CGPoint(x: s*0.08, y: s*0.68))
+        shield.addLine(to: CGPoint(x: s*0.08, y: s*0.10))
+        shield.addLine(to: CGPoint(x: s*0.92, y: s*0.10))
+        shield.addLine(to: CGPoint(x: s*0.92, y: s*0.68))
+        shield.close()
+        UIColor.white.withAlphaComponent(0.22).setFill(); shield.fill()
+        shield.lineWidth = s * 0.07; white.setStroke(); shield.stroke()
+        // "A" letter (autoroute)
+        let A = UIBezierPath()
+        A.move(to: CGPoint(x: s*0.26, y: s*0.78))
+        A.addLine(to: CGPoint(x: s*0.50, y: s*0.20))
+        A.addLine(to: CGPoint(x: s*0.74, y: s*0.78))
+        A.move(to: CGPoint(x: s*0.34, y: s*0.54))
+        A.addLine(to: CGPoint(x: s*0.66, y: s*0.54))
+        A.lineWidth = s * 0.085; A.lineCapStyle = .round; A.lineJoinStyle = .round
+        white.setStroke(); A.stroke()
     }
 
     // MARK: - Helpers
