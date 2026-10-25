@@ -29,7 +29,11 @@ struct MapLibreView: UIViewRepresentable {
 
     func updateUIView(_ mapView: MLNMapView, context: Context) {
         // Mode navigation : suit la voiture avec cap
-        if isNavigating && mapView.userTrackingMode != .followWithCourse {
+        if !isNavigating {
+            context.coordinator.cancelRecenter()
+        }
+        if isNavigating && !context.coordinator.userIsPanning
+            && mapView.userTrackingMode != .followWithCourse {
             mapView.userTrackingMode = .followWithCourse
             let center = mapView.userLocation?.coordinate ?? mapView.centerCoordinate
             let cam = MLNMapCamera(
@@ -56,6 +60,10 @@ struct MapLibreView: UIViewRepresentable {
         private var pendingSelected: Radar?
         private var pendingRoute: MKRoute?
         var currentScheme: ColorScheme = .light
+
+        // Pan libre + recenter 5s
+        private var recenterTimer: Timer?
+        private var userIsPanning = false
 
         init(_ parent: MapLibreView) { self.parent = parent }
 
@@ -203,9 +211,43 @@ struct MapLibreView: UIViewRepresentable {
 
         func mapView(_ mapView: MLNMapView, didDeselect annotation: MLNAnnotation) {}
 
+        func mapView(_ mapView: MLNMapView, regionWillChangeWith reason: MLNCameraChangeReason,
+                     animated: Bool) {
+            let gestures: MLNCameraChangeReason = [.gesturePan, .gestureZoom,
+                                                    .gestureRotate, .gestureTilt]
+            guard !reason.intersection(gestures).isEmpty else { return }
+            // L'utilisateur déplace la carte manuellement
+            if parent.isNavigating && !userIsPanning {
+                userIsPanning = true
+                mapView.userTrackingMode = .none
+            }
+            scheduleRecenter(mapView)
+        }
+
         func mapView(_ mapView: MLNMapView, regionDidChangeWith reason: MLNCameraChangeReason,
                      animated: Bool) {
             parent.onRegionChange?(mapView.centerCoordinate, mapView.camera.altitude)
+        }
+
+        func cancelRecenter() {
+            recenterTimer?.invalidate()
+            recenterTimer = nil
+            userIsPanning = false
+        }
+
+        private func scheduleRecenter(_ mapView: MLNMapView) {
+            recenterTimer?.invalidate()
+            guard parent.isNavigating else { return }
+            recenterTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self, weak mapView] _ in
+                guard let self, let mapView else { return }
+                self.userIsPanning = false
+                mapView.userTrackingMode = .followWithCourse
+                let center = mapView.userLocation?.coordinate ?? mapView.centerCoordinate
+                let cam = MLNMapCamera(lookingAtCenter: center,
+                                      altitude: 500, pitch: 60,
+                                      heading: mapView.camera.heading)
+                mapView.setCamera(cam, withDuration: 0.8, animationTimingFunction: nil)
+            }
         }
     }
 }

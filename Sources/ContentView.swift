@@ -13,6 +13,8 @@ struct ContentView: View {
     @StateObject private var alertVM  = RadarAlertViewModel()
     @StateObject private var routeVM  = RouteViewModel()
 
+    @StateObject private var audio = AudioAlertService.shared
+
     @State private var selectedRadar: Radar?
     @State private var route: MKRoute?
     @State private var isNavigating   = false
@@ -20,6 +22,7 @@ struct ContentView: View {
     @State private var alertRadar: Radar?
     @State private var showFilters    = false
     @State private var showConfirmation = false
+    @State private var showVoiceSetup = !UserDefaults.standard.bool(forKey: "voiceSetupDone")
     @State private var visibleCenter: CLLocationCoordinate2D = .init(latitude: 48.8566, longitude: 2.3522)
     @State private var visibleAltitude: Double = 6000
     @State private var regionTask: Task<Void, Never>?
@@ -130,13 +133,27 @@ struct ContentView: View {
             }
         }
         .onChange(of: routeVM.showConfirmation) { if $1 { showConfirmation = true } }
-        // ── Alertes ───────────────────────────────────────────────────────────
+        // ── Alertes visuelles ─────────────────────────────────────────────────
         .onReceive(alertVM.$triggeredRadar.compactMap { $0 }) { r in
             alertRadar = r
             withAnimation { showAlert = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 withAnimation { showAlert = false }
             }
+        }
+        // ── Alertes vocales ───────────────────────────────────────────────────
+        .onReceive(location.$location.compactMap { $0 }) { loc in
+            audio.checkProximity(radars: store.filtered, location: loc)
+        }
+        // ── Setup voix au lancement ───────────────────────────────────────────
+        .sheet(isPresented: $showVoiceSetup, onDismiss: {
+            UserDefaults.standard.set(true, forKey: "voiceSetupDone")
+        }) {
+            VoiceSetupView(isPresented: $showVoiceSetup)
+                .presentationDetents([.large])
+                .presentationBackground(.regularMaterial)
+                .presentationCornerRadius(28)
+                .interactiveDismissDisabled()
         }
         .task { location.start() }
         .onAppear { alertVM.start(store: store) }
