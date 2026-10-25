@@ -15,8 +15,8 @@ final class BackgroundAlertService: NSObject {
     static let shared = BackgroundAlertService()
 
     private var cancellable: AnyCancellable?
-    // Keys already notified ("radarId-far", "radarId-close") — reset when radar leaves zone
     private var notifiedKeys: Set<String> = []
+    private var prevDist:     [String: CLLocationDistance] = [:]
 
     // MARK: - Start
 
@@ -32,21 +32,17 @@ final class BackgroundAlertService: NSObject {
     // MARK: - Core handler
 
     private func handle(_ location: CLLocation) {
-        let radars = RadarStore.shared.filtered
+        let radars    = RadarStore.shared.filtered
         let appActive = UIApplication.shared.applicationState == .active
 
-        // Audio alerts run in bg via .playback + .duckOthers — always process
         if !appActive {
+            // Audio (AVSpeechSynthesizer ducke Waze)
             AudioAlertService.shared.checkProximity(radars: radars, location: location)
-        }
-        // (When active, ContentView's onReceive handles it — no double-call)
-
-        // Local push notifications when screen is off / app backgrounded
-        if !appActive {
+            // Notifications locales (écran verrouillé)
             checkAndNotify(radars: radars, location: location)
         }
 
-        // Live Activity — always up-to-date
+        // Live Activity : toujours mis à jour
         LiveActivityManager.shared.update(location: location, radars: radars)
     }
 
@@ -56,62 +52,75 @@ final class BackgroundAlertService: NSObject {
         let course = location.course
 
         for radar in radars {
-            let dist = location.distance(from: radar.location)
+            let dist     = location.distance(from: radar.location)
+            let previous = prevDist[radar.id] ?? .infinity
+            prevDist[radar.id] = dist
 
+            // Approche seulement
+            guard dist < previous - 25 else { continue }
+
+            // Tiers 600 m / 300 m / 100 m
             let tier: String
             switch dist {
-            case ..<220:  tier = "close"
-            case ..<520:  tier = "far"
+            case ..<110:  tier = "veryclose"
+            case ..<320:  tier = "close"
+            case ..<620:  tier = "far"
             default:      continue
             }
 
             let key = "\(radar.id)-\(tier)"
             guard !notifiedKeys.contains(key) else { continue }
 
-            // Bearing check (skip if heading away)
+            // Cône ±45°
             if course >= 0 {
                 let bearing = location.bearing(to: radar.coordinate)
-                guard abs(angleDiff(course, bearing)) < 70 else { continue }
+                guard abs(angleDiff(course, bearing)) < 45 else { continue }
+            } else if radar.kind == .feuRouge || radar.kind == .pn {
+                continue  // Radar ponctuel urbain : cap obligatoire
             }
 
+            // Marquer le tier courant ET les plus lointains
             notifiedKeys.insert(key)
+            if tier == "veryclose" {
+                notifiedKeys.insert("\(radar.id)-close")
+                notifiedKeys.insert("\(radar.id)-far")
+            } else if tier == "close" {
+                notifiedKeys.insert("\(radar.id)-far")
+            }
+
             post(for: radar, distanceMeters: Int(dist), tier: tier)
         }
 
-        // Clean up keys for radars now far away
-        let nearbyIds = Set(
-            radars.filter { location.distance(from: $0.location) < 700 }.map(\.id)
-        )
-        notifiedKeys = notifiedKeys.filter { key in
-            let id = key.split(separator: "-").dropLast().joined(separator: "-")
-            return nearbyIds.contains(id)
-        }
+        // Libérer clés au-delà de 1 km
+        let nearbyIds = Set(radars.filter { location.distance(from: $0.location) < 1_000 }.map(\.id))
+        notifiedKeys = notifiedKeys.filter { nearbyIds.contains(idFromKey($0)) }
+        let allIds = Set(radars.map(\.id))
+        prevDist   = prevDist.filter { allIds.contains($0.key) }
     }
 
     private func post(for radar: Radar, distanceMeters: Int, tier: String) {
-        let content        = UNMutableNotificationContent()
-        content.title      = radar.kind.label
-        content.categoryIdentifier = "RADAR"
+        let content = UNMutableNotificationContent()
+        content.title = radar.kind.label
 
-        let rounded = (distanceMeters / 50) * 50   // arrondi 50 m
+        let rounded = max((distanceMeters / 50) * 50, 50)
         let distStr = rounded < 1_000
-            ? "\(max(rounded, 50)) m"
+            ? "\(rounded) m"
             : String(format: "%.1f km", Double(rounded) / 1_000)
 
-        content.body = tier == "close"
-            ? "⚠️ À \(distStr) — ralentissez !"
-            : "Radar dans \(distStr)"
-
-        if let vma = radar.vma {
-            content.subtitle = "Limite : \(vma) km/h"
+        switch tier {
+        case "veryclose": content.body = "⚠️ \(distStr) — ralentissez !"
+        case "close":     content.body = "Radar dans \(distStr)"
+        default:          content.body = "Radar signalé dans \(distStr)"
         }
+
+        if let vma = radar.vma { content.subtitle = "Limite : \(vma) km/h" }
         content.sound             = .default
         content.interruptionLevel = .timeSensitive
 
         let req = UNNotificationRequest(
             identifier: "radar-\(radar.id)-\(tier)",
             content: content,
-            trigger: nil   // immediate
+            trigger: nil
         )
         UNUserNotificationCenter.current().add(req) { _ in }
     }
@@ -132,9 +141,13 @@ final class BackgroundAlertService: NSObject {
         while d < -180 { d += 360 }
         return d
     }
+
+    private func idFromKey(_ key: String) -> String {
+        key.components(separatedBy: "-").dropLast().joined(separator: "-")
+    }
 }
 
-// MARK: - CLLocation bearing (internal — used by BackgroundAlertService + AudioAlertService)
+// MARK: - CLLocation bearing
 
 extension CLLocation {
     func bearing(to coord: CLLocationCoordinate2D) -> Double {

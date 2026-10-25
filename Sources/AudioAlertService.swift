@@ -13,15 +13,14 @@ final class AudioAlertService: NSObject, ObservableObject, AVSpeechSynthesizerDe
     @Published var selectedVoice: AVSpeechSynthesisVoice?
     @Published var isSpeaking = false
 
-    // Radars déjà annoncés : "id-far" ou "id-close"
     private var announced: Set<String> = []
+    private var prevDist:  [String: CLLocationDistance] = [:]
     private let voiceKey = "selectedVoiceIdentifier"
 
     override init() {
         super.init()
         synthesizer.delegate = self
 
-        // Voix françaises triées : premium d'abord
         availableVoices = AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix("fr") }
             .sorted {
@@ -30,33 +29,35 @@ final class AudioAlertService: NSObject, ObservableObject, AVSpeechSynthesizerDe
                 return a < b || (a == b && $0.name < $1.name)
             }
 
-        // Restore last selection
         if let id = UserDefaults.standard.string(forKey: voiceKey),
            let v = AVSpeechSynthesisVoice(identifier: id) {
             selectedVoice = v
         } else {
-            selectedVoice = availableVoices.first
-                ?? AVSpeechSynthesisVoice(language: "fr-FR")
+            selectedVoice = availableVoices.first ?? AVSpeechSynthesisVoice(language: "fr-FR")
         }
 
-        configureAudioSession()
+        // Category seulement — pas d'activation tant qu'on ne parle pas
+        try? AVAudioSession.sharedInstance().setCategory(
+            .playback, mode: .voicePrompt, options: [.duckOthers, .mixWithOthers]
+        )
     }
 
     // MARK: - Public
 
     func speak(_ text: String) {
-        configureAudioSession()
+        // Activer la session juste avant de parler → pas de ducking permanent
+        try? AVAudioSession.sharedInstance().setActive(true)
         synthesizer.stopSpeaking(at: .word)
         let u = AVSpeechUtterance(string: text)
-        u.voice  = selectedVoice
-        u.rate   = AVSpeechUtteranceDefaultSpeechRate * 0.92
-        u.volume = 1.0
+        u.voice              = selectedVoice
+        u.rate               = AVSpeechUtteranceDefaultSpeechRate * 0.92
+        u.volume             = 1.0
         u.postUtteranceDelay = 0.15
         synthesizer.speak(u)
     }
 
     func testAlert() {
-        speak("Alerte radar. Radar fixe dans cinq cents mètres, vitesse limitée à quatre-vingt kilomètres heure.")
+        speak("Alerte radar. Radar fixe dans trois cents mètres, vitesse limitée à quatre-vingt kilomètres heure.")
     }
 
     func announceReady() {
@@ -68,44 +69,66 @@ final class AudioAlertService: NSObject, ObservableObject, AVSpeechSynthesizerDe
         UserDefaults.standard.set(voice.identifier, forKey: voiceKey)
     }
 
-    // MARK: - Proximity check (appelé depuis ContentView à chaque update GPS)
+    // MARK: - Proximity check
 
     func checkProximity(radars: [Radar], location: CLLocation) {
-        let course = location.course  // -1 si indisponible
-        for radar in radars {
-            let dist = location.distance(from: radar.location)
+        let course = location.course  // −1 si indisponible
 
-            // Tiers d'annonce : 500 m puis 200 m
+        for radar in radars {
+            let dist     = location.distance(from: radar.location)
+            let previous = prevDist[radar.id] ?? .infinity
+            prevDist[radar.id] = dist
+
+            // ── Approche seulement (distance décroissante avec 25 m d'hystérésis) ──
+            guard dist < previous - 25 else { continue }
+
+            // ── Tiers 600 m / 300 m / 100 m ─────────────────────────────────────
             let tier: String
             switch dist {
-            case ..<220:  tier = "close"
-            case ..<520:  tier = "far"
-            default: continue
+            case ..<110:  tier = "veryclose"
+            case ..<320:  tier = "close"
+            case ..<620:  tier = "far"
+            default:      continue
             }
 
             let key = "\(radar.id)-\(tier)"
             guard !announced.contains(key) else { continue }
 
-            // Vérifier qu'on se dirige vers le radar (±70°) si le cap est dispo
+            // ── Cap : cône ±45° ──────────────────────────────────────────────────
             if course >= 0 {
                 let bearing = location.bearing(to: radar.coordinate)
-                let diff = abs(angleDiff(from: course, to: bearing))
-                guard diff < 70 else { continue }
+                guard abs(angleDiff(from: course, to: bearing)) < 45 else { continue }
+            } else if radar.kind == .feuRouge || radar.kind == .pn {
+                // Feu rouge / PN = radar urbain ponctuel → cap GPS obligatoire
+                continue
             }
 
+            // Marquer aussi tous les tiers plus lointains pour éviter les faux
+            // positifs en s'éloignant (app démarrée proche du radar)
             announced.insert(key)
-            let distText = tier == "close" ? "deux cents mètres" : "cinq cents mètres"
+            if tier == "veryclose" {
+                announced.insert("\(radar.id)-close")
+                announced.insert("\(radar.id)-far")
+            } else if tier == "close" {
+                announced.insert("\(radar.id)-far")
+            }
+
+            let distText: String
+            switch tier {
+            case "veryclose": distText = "cent mètres"
+            case "close":     distText = "trois cents mètres"
+            default:          distText = "six cents mètres"
+            }
             var msg = "\(radar.kind.voiceLabel) dans \(distText)"
             if let vma = radar.vma { msg += ", vitesse limitée à \(vma) kilomètres heure" }
             speak(msg)
         }
 
-        // Nettoyer les radars devenus lointains
-        let ids = Set(radars.map { $0.id })
-        announced = Set(announced.filter { key in
-            let id = key.components(separatedBy: "-").dropLast().joined(separator: "-")
-            return ids.contains(id)
-        })
+        // Libérer les clés des radars > 1 km (permet la réalerte au prochain passage)
+        let nearbyIds = Set(radars.filter { location.distance(from: $0.location) < 1_000 }.map(\.id))
+        announced    = announced.filter { nearbyIds.contains(idFromKey($0)) }
+        let allIds   = Set(radars.map(\.id))
+        prevDist     = prevDist.filter { allIds.contains($0.key) }
     }
 
     // MARK: - AVSpeechSynthesizerDelegate
@@ -113,26 +136,24 @@ final class AudioAlertService: NSObject, ObservableObject, AVSpeechSynthesizerDe
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didStart u: AVSpeechUtterance) {
         DispatchQueue.main.async { self.isSpeaking = true }
     }
+
     func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) {
         DispatchQueue.main.async { self.isSpeaking = false }
+        // Désactiver → la musique reprend immédiatement
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    // MARK: - Private
-
-    private func configureAudioSession() {
-        try? AVAudioSession.sharedInstance().setCategory(
-            .playback,
-            mode: .voicePrompt,
-            options: [.duckOthers, .mixWithOthers]
-        )
-        try? AVAudioSession.sharedInstance().setActive(true, options: .notifyOthersOnDeactivation)
-    }
+    // MARK: - Helpers
 
     private func angleDiff(from a: Double, to b: Double) -> Double {
         var d = b - a
         while d >  180 { d -= 360 }
         while d < -180 { d += 360 }
         return d
+    }
+
+    private func idFromKey(_ key: String) -> String {
+        key.components(separatedBy: "-").dropLast().joined(separator: "-")
     }
 }
 
