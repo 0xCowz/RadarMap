@@ -192,7 +192,7 @@ struct Radar: Identifiable, Hashable {
               let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
         let isoFmt = ISO8601DateFormatter()
         return text.split(whereSeparator: \.isNewline).dropFirst().compactMap { line -> Radar? in
-            let c = line.split(separator: ";", omittingEmptySubsequences: false)
+            let c = String(line).components(separatedBy: ";")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
             guard c.count >= 6,
                   let kind = RadarKind(rawValue: c[1]),
