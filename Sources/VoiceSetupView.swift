@@ -9,6 +9,7 @@ struct VoiceSetupView: View {
 
     @State private var testDone = false
     @State private var readyDone = false
+    @State private var speakPulse = false
 
     var body: some View {
         NavigationStack {
@@ -22,7 +23,8 @@ struct VoiceSetupView: View {
                     Image(systemName: "waveform.circle.fill")
                         .font(.system(size: 46))
                         .foregroundStyle(Color.orange)
-                        .symbolEffect(.pulse, isActive: service.isSpeaking)
+                        .scaleEffect(speakPulse ? 1.12 : 1.0)
+                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: speakPulse)
                 }
                 .padding(.top, 32)
 
@@ -60,7 +62,7 @@ struct VoiceSetupView: View {
                                     Text(voice.language)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
-                                    if voice.quality == .enhanced || voice.quality == .premium {
+                                    if voice.quality.rawValue >= AVSpeechSynthesisVoiceQuality.enhanced.rawValue {
                                         Text("HD")
                                             .font(.system(size: 10, weight: .bold))
                                             .padding(.horizontal, 5).padding(.vertical, 1)
@@ -129,6 +131,9 @@ struct VoiceSetupView: View {
                 .padding(.vertical, 20)
             }
             .navigationBarHidden(true)
+        }
+        .onChange(of: service.isSpeaking) { _, speaking in
+            speakPulse = speaking
         }
     }
 }

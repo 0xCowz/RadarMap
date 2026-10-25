@@ -13,7 +13,7 @@ struct ContentView: View {
     @StateObject private var alertVM  = RadarAlertViewModel()
     @StateObject private var routeVM  = RouteViewModel()
 
-    @StateObject private var audio = AudioAlertService.shared
+    @ObservedObject private var audio = AudioAlertService.shared
 
     @State private var selectedRadar: Radar?
     @State private var route: MKRoute?

@@ -25,8 +25,8 @@ final class AudioAlertService: NSObject, ObservableObject, AVSpeechSynthesizerDe
         availableVoices = AVSpeechSynthesisVoice.speechVoices()
             .filter { $0.language.hasPrefix("fr") }
             .sorted {
-                let a = ($0.quality == .enhanced || $0.quality == .premium) ? 0 : 1
-                let b = ($1.quality == .enhanced || $1.quality == .premium) ? 0 : 1
+                let a = ($0.quality.rawValue >= AVSpeechSynthesisVoiceQuality.enhanced.rawValue) ? 0 : 1
+                let b = ($1.quality.rawValue >= AVSpeechSynthesisVoiceQuality.enhanced.rawValue) ? 0 : 1
                 return a < b || (a == b && $0.name < $1.name)
             }
 

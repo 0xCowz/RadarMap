@@ -63,7 +63,7 @@ struct MapLibreView: UIViewRepresentable {
 
         // Pan libre + recenter 5s
         private var recenterTimer: Timer?
-        private var userIsPanning = false
+        var userIsPanning = false
 
         init(_ parent: MapLibreView) { self.parent = parent }
 
